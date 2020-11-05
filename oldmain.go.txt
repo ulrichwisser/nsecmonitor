@@ -1,0 +1,92 @@
+package main
+
+import (
+	"flag"
+	"log"
+
+	"github.com/DNS-OARC/ripeatlas"
+	"github.com/DNS-OARC/ripeatlas/measurement"
+	"github.com/DNS-OARC/ripeatlas/measurement/dns"
+
+	mdns "github.com/miekg/dns"
+)
+
+var all bool
+var page int
+var file bool
+
+func countNSEC(result *dns.Result) (int, int) {
+	answer, err := result.UnpackAbuf()
+	if err != nil {
+		log.Println("Error unpacking ", err)
+		return 0, 0
+	}
+	if answer == nil {
+		log.Println("Error, seems there is no abuf")
+		return 0, 0
+	}
+	nsec := 0
+	nsec3 := 0
+
+	for _, rr := range answer.Ns {
+		if rr.Header().Rrtype == mdns.TypeNSEC {
+			nsec += 1
+		}
+		if rr.Header().Rrtype == mdns.TypeNSEC3 {
+			nsec3 += 1
+		}
+	}
+	return nsec, nsec3
+}
+
+func print(m *measurement.Result) {
+	log.Println("PROBE ", m.PrbId(), "DST", m.DstAddr(), "TYPE ", m.Type())
+	if m.Type() != "dns" {
+		log.Println("    NOT DNS")
+		return
+	}
+	if m.DnsError() != nil {
+		log.Println("    DNS Error     timeout ", m.DnsError().Timeout())
+		return
+	}
+	if m.DnsResult() != nil {
+		log.Println("    DNS Result    ancount ", m.DnsResult().Ancount())
+		return
+	}
+	if m.DnsResultsets() != nil {
+		for _, r := range m.DnsResultsets() {
+			if r.DnsError() != nil {
+				log.Println("    DNS Resultset error ")
+				continue
+			}
+			nsec, nsec3 := countNSEC(r.Result())
+			log.Println("    DNS Resultset NSEC ", nsec, " NSEC3 ", nsec3)
+		}
+		return
+	}
+	log.Println("Non of the above")
+}
+
+func main() {
+	getConfig()
+
+	var a ripeatlas.Atlaser
+	a = ripeatlas.NewFile()
+
+	for _, arg := range flag.Args() {
+		measurements, err := a.MeasurementResults(ripeatlas.Params{
+			"file": arg,
+		})
+		if err != nil {
+			log.Fatal("File error: ", err)
+		}
+
+		for m := range measurements {
+			if m.ParseError != nil {
+				log.Println("Parse error: ", m.ParseError.Error())
+				break
+			}
+			print(m)
+		}
+	}
+}

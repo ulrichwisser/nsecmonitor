@@ -1,0 +1,523 @@
+/*
+Copyright © 2020 Ulrich Wisser <ulrich@wisser.se>
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program. If not, see <http://www.gnu.org/licenses/>.
+*/
+package cmd
+
+import (
+	"fmt"
+	"log"
+	"sync"
+	"time"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
+
+	"github.com/DNS-OARC/ripeatlas/measurement"
+	"github.com/DNS-OARC/ripeatlas/measurement/dns"
+
+	"github.com/graarh/golang-socketio"
+	"github.com/graarh/golang-socketio/transport"
+
+	mdns "github.com/miekg/dns"
+
+	//_ "github.com/influxdata/influxdb1-client"
+	// this is important because of the bug in go mod
+	client "github.com/influxdata/influxdb1-client/v2"
+)
+
+var measurement2type = make(map[int]string)
+
+
+
+func fillMeasurement(mtype string) {
+	mids := viper.GetIntSlice(mtype)
+	for _, mid := range mids {
+		measurement2type[mid] = mtype
+	}
+}
+
+// streamCmd represents the stream command
+var streamCmd = &cobra.Command{
+	Use:   "stream",
+	Short: "Receive a stream of Ripe Atlas measurement results and save to influxdb",
+	Long:  "Receive a stream of Ripe Atlas measurement results and save to influxdb",
+	Run: func(cmd *cobra.Command, args []string) {
+		checkStreamConf()
+
+		fillMeasurement("invalid")
+		fillMeasurement("random")
+		fillMeasurement("nxdomain")
+		fillMeasurement("authoritative")
+
+		ch := subscribe()
+
+		go accumulate()
+
+		c := openInfluxDB()
+		defer c.Close()
+
+		var err error
+		for r := range ch {
+
+			// if parsing fails
+			if r.ParseError != nil {
+				log.Println(r.ParseError.Error())
+				continue
+			}
+
+			// we handle only dns results
+			if r.Type() != "dns" {
+				log.Printf("Wrong result type msmid %d type %s %s", r.MsmId(), r.Type(), measurement2type[r.MsmId()])
+				return
+			}
+
+			// debug output of received result
+			if verbose > 1 {
+				log.Printf("%d %s %s", r.MsmId(), r.Type(), measurement2type[r.MsmId()])
+			}
+
+			// handle single result
+			if r.DnsResult() != nil {
+				handle(measurement2type[r.MsmId()], fmt.Sprintf("%d", r.Timestamp()), server(r), r.DnsResult())
+			}
+			for _, s := range r.DnsResultsets() {
+				if s.Result() != nil {
+					handle(measurement2type[r.MsmId()], fmt.Sprintf("%d", r.Timestamp()), server(r), s.Result())
+				}
+			}
+		}
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(streamCmd)
+	streamCmd.Flags().IntSliceP("invalid", "i", []int{}, "measurement id of invalid measurements")
+	streamCmd.Flags().IntSliceP("nxdomain", "n", []int{}, "measurement id of static nxdomain measurements")
+	streamCmd.Flags().IntSliceP("random", "r", []int{}, "measurement id of random nxdomain measurements")
+	streamCmd.Flags().IntSliceP("authoritative", "a", []int{}, "measurement id of authoritative nxdomain measurements")
+
+	// Use flags for viper values
+	viper.BindPFlags(streamCmd.Flags())
+}
+
+func checkStreamConf() {
+	invalid := viper.GetIntSlice("invalid")
+	random := viper.GetIntSlice("random")
+	nxdomain := viper.GetIntSlice("nxdomain")
+	authoritative := viper.GetIntSlice("authoritative")
+
+	if len(invalid)+len(random)+len(nxdomain)+len(authoritative) == 0 {
+		log.Println("At least one measurement id must be given")
+	}
+
+	if len(viper.GetString("influxserver")) == 0 {
+		log.Println("Influx server must be given")
+	}
+	if len(viper.GetString("influxdb")) == 0 {
+		log.Println("Influx database must be given")
+	}
+}
+
+func subscribe() <-chan *measurement.Result {
+	ch := make(chan *measurement.Result, 1000)
+
+	c, err := gosocketio.Dial(StreamUrl, transport.GetDefaultWebsocketTransport())
+	if err != nil {
+		log.Fatalf("gosocketio.Dial(%s): %s", StreamUrl, err.Error())
+	}
+
+	err = c.On("atlas_error", func(h *gosocketio.Channel, args interface{}) {
+		r := &measurement.Result{ParseError: fmt.Errorf("atlas_error: %v", args)}
+		ch <- r
+		c.Close()
+		close(ch)
+	})
+	if err != nil {
+		log.Fatalf("c.On(atlas_error): %s", err.Error())
+	}
+
+	err = c.On("atlas_result", func(h *gosocketio.Channel, r measurement.Result) {
+		ch <- &r
+	})
+	if err != nil {
+		log.Fatalf("c.On(atlas_result): %s", err.Error())
+	}
+
+	err = c.On(gosocketio.OnDisconnection, func(h *gosocketio.Channel) {
+		c.Close()
+		close(ch)
+	})
+	if err != nil {
+		log.Fatalf("c.On(disconnect): %s", err.Error())
+	}
+
+	err = c.On(gosocketio.OnConnection, func(h *gosocketio.Channel) {
+
+		for mid := range measurement2type {
+			log.Println("Subscribe to ", mid)
+			subscribe := make(map[string]interface{})
+			subscribe["stream_type"] = "result"
+			subscribe["msm"] = mid
+			subscribe["buffering"] = true
+			subscribe["sendBacklog"] = true
+			err := h.Emit("atlas_subscribe", subscribe)
+			if err != nil {
+				r := &measurement.Result{ParseError: fmt.Errorf("h.Emit(atlas_subscribe): %s", err.Error())}
+				ch <- r
+				c.Close()
+				close(ch)
+				return
+			}
+		}
+	})
+	if err != nil {
+		log.Fatalf("c.On(connect): %s", err.Error())
+	}
+
+	return ch
+}
+
+func nsec(rrset []mdns.RR) string {
+	// send data to queue
+	for _, rr := range rrset {
+		switch rr.Header().Rrtype {
+		case mdns.TypeNSEC:
+			return "NSEC"
+		case mdns.TypeNSEC3:
+			return "NSEC3"
+		}
+	}
+	return "NONSEC"
+}
+
+func server(msm *measurement.Result) string {
+	if len(msm.DstName()) > 0 {
+		return msm.DstName()
+	}
+	if len(msm.DstAddr()) > 0 {
+		return msm.DstAddr()
+	}
+	return "NoName"
+}
+
+func handle(mtype string, timestamp string, dstname string, result *dns.Result) {
+
+	msg, err := result.UnpackAbuf()
+	if err != nil {
+		log.Println("Could not unpack Abuf ", err)
+		return
+	}
+
+	// extract human readable rcode
+	rcode := mdns.RcodeToString[msg.Rcode]
+
+	switch mtype {
+	case "invalid":
+		channels[mtype] <- &chanMsg{"rcode": rcode, "time": timestamp}
+	case "random":
+		channels[mtype] <- &chanMsg{"rcode": rcode, "time": timestamp, "nsec": nsec(msg.Ns)}
+	case "nxdomain":
+		channels[mtype] <- &chanMsg{"rcode": rcode, "time": timestamp, "nsec": nsec(msg.Ns)}
+	case "authoritative":
+		channels[mtype] <- &chanMsg{"rcode": rcode, "time": timestamp, "nsec": nsec(msg.Ns), "server": dstname}
+	default:
+		log.Printf("Unknown message type: type %s\n", mtype)
+	}
+
+}
+
+type accInvalid map[string]map[string]int
+type accNxdomain map[string]map[string]map[string]int
+type accRandom map[string]map[string]map[string]int
+type accAuth map[string]map[string]map[string]map[string]int
+
+var invalidAcc = make(accInvalid)
+var nxdomainAcc = make(accNxdomain)
+var randomAcc = make(accRandom)
+var authAcc = make(accAuth)
+
+var accessInvalid = sync.Mutex{}
+var accessNxdomain = sync.Mutex{}
+var accessRandom = sync.Mutex{}
+var accessAuth = sync.Mutex{}
+
+func accumulate() {
+	for {
+		select {
+		case m1 := <-channels["invalid"]:
+			timestamp := (*m1)["time"]
+			rcode := (*m1)["rcode"]
+			accessInvalid.Lock()
+			if _, ok := invalidAcc[timestamp]; !ok {
+				invalidAcc[timestamp] = make(map[string]int)
+			}
+			invalidAcc[timestamp][rcode]++
+			accessInvalid.Unlock()
+
+		case m2 := <-channels["nxdomain"]:
+			timestamp := (*m2)["time"]
+			rcode := (*m2)["rcode"]
+			nsec := (*m2)["nsec"]
+			accessNxdomain.Lock()
+			if _, ok := nxdomainAcc[timestamp]; !ok {
+				nxdomainAcc[timestamp] = make(map[string]map[string]int)
+			}
+			if _, ok := nxdomainAcc[timestamp][rcode]; !ok {
+				nxdomainAcc[timestamp][rcode] = make(map[string]int)
+			}
+			nxdomainAcc[timestamp][rcode][nsec]++
+			accessNxdomain.Unlock()
+
+		case m3 := <-channels["random"]:
+			timestamp := (*m3)["time"]
+			rcode := (*m3)["rcode"]
+			nsec := (*m3)["nsec"]
+			accessRandom.Lock()
+			if _, ok := randomAcc[timestamp]; !ok {
+				randomAcc[timestamp] = make(map[string]map[string]int)
+			}
+			if _, ok := randomAcc[timestamp][rcode]; !ok {
+				randomAcc[timestamp][rcode] = make(map[string]int)
+			}
+			randomAcc[timestamp][rcode][nsec]++
+			accessRandom.Unlock()
+
+		case m4 := <-channels["authoritative"]:
+			timestamp := (*m4)["time"]
+			rcode := (*m4)["rcode"]
+			nsec := (*m4)["nsec"]
+			server := (*m4)["server"]
+			accessAuth.Lock()
+			if _, ok := authAcc[timestamp]; !ok {
+				authAcc[timestamp] = make(map[string]map[string]map[string]int)
+			}
+			if _, ok := authAcc[timestamp][rcode]; !ok {
+				authAcc[timestamp][rcode] = make(map[string]map[string]int)
+			}
+			if _, ok := authAcc[timestamp][rcode][server]; !ok {
+				authAcc[timestamp][rcode][server] = make(map[string]int)
+			}
+			authAcc[timestamp][rcode][server][nsec]++
+			accessAuth.Unlock()
+		}
+	}
+}
+
+func write2Influx() {
+	ticker := time.NewTicker(500 * time.Millisecond)
+		for {
+			_ := <-ticker.C:
+
+	var bp client.BatchPoints
+	if bp == nil {
+		// Create a new point batch
+		bp, err = client.NewBatchPoints(client.BatchPointsConfig{
+			Database:  viper.GetString("influxdb"),
+			Precision: "s",
+		})
+		if err != nil {
+			log.Fatalf("Could not create new batch points: %s", err.Error())
+		}
+		count = 0
+	}
+
+	// tags
+	tags := map[string]string{
+		"nsec":  fmt.Sprintf("%d", nsec),
+		"nsec3": fmt.Sprintf("%d", nsec3),
+		"rcode": rcode,
+	}
+
+	// values
+	fields := map[string]interface{}{
+		"answer":     len(msg.Answer),
+		"authority":  len(msg.Ns),
+		"additional": len(msg.Extra),
+	}
+
+	// create new point
+	pt, err := client.NewPoint("invalid", tags, fields, now)
+	if err != nil {
+		log.Fatal("Could not create new point. ", err)
+	}
+	if verbose > 2 {
+		log.Printf("Tags:   %v\n", tags)
+		log.Printf("Fields: %v\n", fields)
+		log.Printf("Point:  %v\n", pt)
+	}
+
+	// add point to list
+	bp.AddPoint(pt)
+
+	if count > 100 {
+		if verbose > 1 {
+			log.Println("Writing to influx")
+		}
+		err = c.Write(bp)
+		if err != nil {
+			log.Printf("Error writing to InfluxDB: %s", err.Error())
+		}
+		bp = nil
+	}
+
+}
+
+func handleRandom(bp client.BatchPoints, msg *mdns.Msg) {
+	now := time.Now()
+	rcode := mdns.RcodeToString[msg.Rcode]
+	var nsec int
+	var nsec3 int
+	for _, rr := range msg.Ns {
+		switch rr.Header().Rrtype {
+		case mdns.TypeNSEC:
+			nsec++
+		case mdns.TypeNSEC3:
+			nsec3++
+		}
+	}
+
+	// tags
+	tags := map[string]string{
+		"nsec":  fmt.Sprintf("%d", nsec),
+		"nsec3": fmt.Sprintf("%d", nsec3),
+		"rcode": rcode,
+	}
+
+	// values
+	fields := map[string]interface{}{
+		"answer":     len(msg.Answer),
+		"authority":  len(msg.Ns),
+		"additional": len(msg.Extra),
+	}
+
+	// create new point
+	pt, err := client.NewPoint("random", tags, fields, now)
+	if err != nil {
+		log.Fatal("Could not create new point. ", err)
+	}
+	if verbose > 2 {
+		log.Printf("Tags:   %v\n", tags)
+		log.Printf("Fields: %v\n", fields)
+		log.Printf("Point:  %v\n", pt)
+	}
+
+	// add point to list
+	bp.AddPoint(pt)
+}
+
+func handleNxdomain(bp client.BatchPoints, msg *mdns.Msg) {
+	now := time.Now()
+	rcode := mdns.RcodeToString[msg.Rcode]
+	var nsec int
+	var nsec3 int
+	for _, rr := range msg.Ns {
+		switch rr.Header().Rrtype {
+		case mdns.TypeNSEC:
+			nsec++
+		case mdns.TypeNSEC3:
+			nsec3++
+		}
+	}
+
+	// tags
+	tags := map[string]string{
+		"nsec":  fmt.Sprintf("%d", nsec),
+		"nsec3": fmt.Sprintf("%d", nsec3),
+		"rcode": rcode,
+	}
+
+	// values
+	fields := map[string]interface{}{
+		"answer":     len(msg.Answer),
+		"authority":  len(msg.Ns),
+		"additional": len(msg.Extra),
+	}
+
+	// create new point
+	pt, err := client.NewPoint("nxdomain", tags, fields, now)
+	if err != nil {
+		log.Fatal("Could not create new point. ", err)
+	}
+	if verbose > 2 {
+		log.Printf("Tags:   %v\n", tags)
+		log.Printf("Fields: %v\n", fields)
+		log.Printf("Point:  %v\n", pt)
+	}
+
+	// add point to list
+	bp.AddPoint(pt)
+}
+
+func handleAuth(bp client.BatchPoints, msg *mdns.Msg) {
+	now := time.Now()
+	rcode := mdns.RcodeToString[msg.Rcode]
+	var nsec int
+	var nsec3 int
+	for _, rr := range msg.Ns {
+		switch rr.Header().Rrtype {
+		case mdns.TypeNSEC:
+			nsec++
+		case mdns.TypeNSEC3:
+			nsec3++
+		}
+	}
+
+	// tags
+	tags := map[string]string{
+		"nsec":  fmt.Sprintf("%d", nsec),
+		"nsec3": fmt.Sprintf("%d", nsec3),
+		"rcode": rcode,
+	}
+
+	// values
+	fields := map[string]interface{}{
+		"answer":     len(msg.Answer),
+		"authority":  len(msg.Ns),
+		"additional": len(msg.Extra),
+	}
+
+	// create new point
+	pt, err := client.NewPoint("authoritative", tags, fields, now)
+	if err != nil {
+		log.Fatal("Could not create new point. ", err)
+	}
+	if verbose > 2 {
+		log.Printf("Tags:   %v\n", tags)
+		log.Printf("Fields: %v\n", fields)
+		log.Printf("Point:  %v\n", pt)
+	}
+
+	// add point to list
+	bp.AddPoint(pt)
+}
+
+func openInfluxDB() client.Client {
+	// influxdb client config
+	conf := client.HTTPConfig{
+		Addr: viper.GetString("influxserver"),
+	}
+	if len(viper.GetString("influxuser")) > 0 {
+		conf.Username = viper.GetString("influxuser")
+		conf.Password = viper.GetString("influxpasswd")
+	}
+
+	// get access to Influx
+	c, err := client.NewHTTPClient(conf)
+	if err != nil {
+		log.Fatalf("Error creating InfluxDB Client: %s", err.Error())
+	}
+	return c
+}
