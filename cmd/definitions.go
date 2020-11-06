@@ -10,31 +10,7 @@ var probes = []ProbeSet{
 		},
 	},
 	{
-		Requested: 200,
-		Type:      "country",
-		Value:     "NO",
-		Tags: Tags{
-			Include: []string{"system-resolves-a-correctly"},
-		},
-	},
-	{
-		Requested: 200,
-		Type:      "country",
-		Value:     "FI",
-		Tags: Tags{
-			Include: []string{"system-resolves-a-correctly"},
-		},
-	},
-	{
-		Requested: 200,
-		Type:      "country",
-		Value:     "DK",
-		Tags: Tags{
-			Include: []string{"system-resolves-a-correctly"},
-		},
-	},
-	{
-		Requested: 5000,
+		Requested: 800,
 		Type:      "area",
 		Value:     "WW",
 		Tags: Tags{
@@ -53,31 +29,7 @@ var probesV4 = []ProbeSet{
 		},
 	},
 	{
-		Requested: 200,
-		Type:      "country",
-		Value:     "NO",
-		Tags: Tags{
-			Include: []string{"system-resolves-a-correctly", "system-ipv4-stable-1d"},
-		},
-	},
-	{
-		Requested: 200,
-		Type:      "country",
-		Value:     "FI",
-		Tags: Tags{
-			Include: []string{"system-resolves-a-correctly", "system-ipv4-stable-1d"},
-		},
-	},
-	{
-		Requested: 200,
-		Type:      "country",
-		Value:     "DK",
-		Tags: Tags{
-			Include: []string{"system-resolves-a-correctly", "system-ipv4-stable-1d"},
-		},
-	},
-	{
-		Requested: 5000,
+		Requested: 800,
 		Type:      "area",
 		Value:     "WW",
 		Tags: Tags{
@@ -88,7 +40,7 @@ var probesV4 = []ProbeSet{
 
 var probesV6 = []ProbeSet{
 	{
-		Requested: 200,
+		Requested: 50,
 		Type:      "country",
 		Value:     "SE",
 		Tags: Tags{
@@ -96,31 +48,7 @@ var probesV6 = []ProbeSet{
 		},
 	},
 	{
-		Requested: 200,
-		Type:      "country",
-		Value:     "NO",
-		Tags: Tags{
-			Include: []string{"system-resolves-aaaa-correctly", "system-ipv6-stable-1d"},
-		},
-	},
-	{
-		Requested: 200,
-		Type:      "country",
-		Value:     "FI",
-		Tags: Tags{
-			Include: []string{"system-resolves-aaaa-correctly", "system-ipv6-stable-1d"},
-		},
-	},
-	{
-		Requested: 200,
-		Type:      "country",
-		Value:     "DK",
-		Tags: Tags{
-			Include: []string{"system-resolves-aaaa-correctly", "system-ipv6-stable-1d"},
-		},
-	},
-	{
-		Requested: 5000,
+		Requested: 950,
 		Type:      "area",
 		Value:     "WW",
 		Tags: Tags{
