@@ -23,7 +23,10 @@ import (
 
 	"github.com/DNS-OARC/ripeatlas/measurement"
 	"github.com/DNS-OARC/ripeatlas/measurement/dns"
-	client "github.com/influxdata/influxdb/client/v2"
+
+	_ "github.com/influxdata/influxdb1-client" // this is important because of the bug in go mod
+	client "github.com/influxdata/influxdb1-client/v2"
+
 	mdns "github.com/miekg/dns"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
