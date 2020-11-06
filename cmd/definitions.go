@@ -10,7 +10,31 @@ var probes = []ProbeSet{
 		},
 	},
 	{
-		Requested: 800,
+		Requested: 200,
+		Type:      "country",
+		Value:     "NO",
+		Tags: Tags{
+			Include: []string{"system-resolves-a-correctly"},
+		},
+	},
+	{
+		Requested: 200,
+		Type:      "country",
+		Value:     "FI",
+		Tags: Tags{
+			Include: []string{"system-resolves-a-correctly"},
+		},
+	},
+	{
+		Requested: 200,
+		Type:      "country",
+		Value:     "DK",
+		Tags: Tags{
+			Include: []string{"system-resolves-a-correctly"},
+		},
+	},
+	{
+		Requested: 4000,
 		Type:      "area",
 		Value:     "WW",
 		Tags: Tags{
@@ -29,7 +53,31 @@ var probesV4 = []ProbeSet{
 		},
 	},
 	{
-		Requested: 800,
+		Requested: 200,
+		Type:      "country",
+		Value:     "NO",
+		Tags: Tags{
+			Include: []string{"system-resolves-a-correctly", "system-ipv4-stable-1d"},
+		},
+	},
+	{
+		Requested: 200,
+		Type:      "country",
+		Value:     "FI",
+		Tags: Tags{
+			Include: []string{"system-resolves-a-correctly", "system-ipv4-stable-1d"},
+		},
+	},
+	{
+		Requested: 200,
+		Type:      "country",
+		Value:     "DK",
+		Tags: Tags{
+			Include: []string{"system-resolves-a-correctly", "system-ipv4-stable-1d"},
+		},
+	},
+	{
+		Requested: 4000,
 		Type:      "area",
 		Value:     "WW",
 		Tags: Tags{
@@ -40,7 +88,7 @@ var probesV4 = []ProbeSet{
 
 var probesV6 = []ProbeSet{
 	{
-		Requested: 50,
+		Requested: 200,
 		Type:      "country",
 		Value:     "SE",
 		Tags: Tags{
@@ -48,7 +96,31 @@ var probesV6 = []ProbeSet{
 		},
 	},
 	{
-		Requested: 950,
+		Requested: 200,
+		Type:      "country",
+		Value:     "NO",
+		Tags: Tags{
+			Include: []string{"system-resolves-aaaa-correctly", "system-ipv6-stable-1d"},
+		},
+	},
+	{
+		Requested: 200,
+		Type:      "country",
+		Value:     "FI",
+		Tags: Tags{
+			Include: []string{"system-resolves-aaaa-correctly", "system-ipv6-stable-1d"},
+		},
+	},
+	{
+		Requested: 200,
+		Type:      "country",
+		Value:     "DK",
+		Tags: Tags{
+			Include: []string{"system-resolves-aaaa-correctly", "system-ipv6-stable-1d"},
+		},
+	},
+	{
+		Requested: 4000,
 		Type:      "area",
 		Value:     "WW",
 		Tags: Tags{
@@ -74,8 +146,7 @@ var definition1 = Definition{
 	IncludeAbuf:      true,
 	UseMacros:        false,
 	TTL:              false,
-	Interval:         60,
-	Spread:           60,
+	Interval:         300,
 }
 
 var definition2 = Definition{
@@ -96,8 +167,7 @@ var definition2 = Definition{
 	IncludeAbuf:      true,
 	UseMacros:        false,
 	TTL:              false,
-	Interval:         60,
-	Spread:           30,
+	Interval:         300,
 	Protocol:         "UDP",
 	UDPPayloadSize:   512,
 	SkipDNScheck:     false,
