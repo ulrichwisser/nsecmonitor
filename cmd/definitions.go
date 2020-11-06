@@ -9,14 +9,38 @@ var probes = []ProbeSet{
 			Include: []string{"system-resolves-a-correctly"},
 		},
 	},
-	/*
-		{
-			Requested:   5000,
-			Type:        "area",
-			Value:       "WW",
-			TagsInclude: "system-ipv4-works,system-resolves-a-correctly",
+	{
+		Requested: 200,
+		Type:      "country",
+		Value:     "NO",
+		Tags: Tags{
+			Include: []string{"system-resolves-a-correctly"},
 		},
-	*/
+	},
+	{
+		Requested: 200,
+		Type:      "country",
+		Value:     "FI",
+		Tags: Tags{
+			Include: []string{"system-resolves-a-correctly"},
+		},
+	},
+	{
+		Requested: 200,
+		Type:      "country",
+		Value:     "DK",
+		Tags: Tags{
+			Include: []string{"system-resolves-a-correctly"},
+		},
+	},
+	{
+		Requested: 5000,
+		Type:      "area",
+		Value:     "WW",
+		Tags: Tags{
+			Include: []string{"system-resolves-a-correctly"},
+		},
+	},
 }
 
 var probesV4 = []ProbeSet{
@@ -28,14 +52,38 @@ var probesV4 = []ProbeSet{
 			Include: []string{"system-resolves-a-correctly", "system-ipv4-stable-1d"},
 		},
 	},
-	/*
-		{
-			Requested:   5000,
-			Type:        "area",
-			Value:       "WW",
-			TagsInclude: "system-ipv4-works,system-resolves-a-correctly",
+	{
+		Requested: 200,
+		Type:      "country",
+		Value:     "NO",
+		Tags: Tags{
+			Include: []string{"system-resolves-a-correctly", "system-ipv4-stable-1d"},
 		},
-	*/
+	},
+	{
+		Requested: 200,
+		Type:      "country",
+		Value:     "FI",
+		Tags: Tags{
+			Include: []string{"system-resolves-a-correctly", "system-ipv4-stable-1d"},
+		},
+	},
+	{
+		Requested: 200,
+		Type:      "country",
+		Value:     "DK",
+		Tags: Tags{
+			Include: []string{"system-resolves-a-correctly", "system-ipv4-stable-1d"},
+		},
+	},
+	{
+		Requested: 5000,
+		Type:      "area",
+		Value:     "WW",
+		Tags: Tags{
+			Include: []string{"system-resolves-a-correctly", "system-ipv4-stable-1d"},
+		},
+	},
 }
 
 var probesV6 = []ProbeSet{
@@ -47,14 +95,38 @@ var probesV6 = []ProbeSet{
 			Include: []string{"system-resolves-aaaa-correctly", "system-ipv6-stable-1d"},
 		},
 	},
-	/*
-		{
-			Requested:   5000,
-			Type:        "area",
-			Value:       "WW",
-			TagsInclude: "system-ipv4-works,system-resolves-a-correctly",
+	{
+		Requested: 200,
+		Type:      "country",
+		Value:     "NO",
+		Tags: Tags{
+			Include: []string{"system-resolves-aaaa-correctly", "system-ipv6-stable-1d"},
 		},
-	*/
+	},
+	{
+		Requested: 200,
+		Type:      "country",
+		Value:     "FI",
+		Tags: Tags{
+			Include: []string{"system-resolves-aaaa-correctly", "system-ipv6-stable-1d"},
+		},
+	},
+	{
+		Requested: 200,
+		Type:      "country",
+		Value:     "DK",
+		Tags: Tags{
+			Include: []string{"system-resolves-aaaa-correctly", "system-ipv6-stable-1d"},
+		},
+	},
+	{
+		Requested: 5000,
+		Type:      "area",
+		Value:     "WW",
+		Tags: Tags{
+			Include: []string{"system-resolves-aaaa-correctly", "system-ipv6-stable-1d"},
+		},
+	},
 }
 
 var definition1 = Definition{
